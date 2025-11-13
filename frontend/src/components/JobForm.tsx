@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Download, Monitor, Eye, EyeOff, Sparkles, ArrowRight } from 'lucide-react';
 import { WebSocketManager } from '../services/WebSocketManager';
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = '';
 
 interface JobFormProps {
   wsManager: WebSocketManager;
