@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: browserpilot
+    runtime: docker
+    plan: free
+    region: ohio # o la región que prefieras
+    healthCheck:
+      path: /
+      port: 8000
+    envGroup: browserpilot-secrets # <-- Aquí conectamos el grupo de secretos
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    ports:
+      - port: 8000
+        protocol: TCP
