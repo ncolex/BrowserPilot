@@ -6,10 +6,21 @@ import google.generativeai as genai
 from backend.browser_controller import BrowserController
 import base64
 from bs4 import BeautifulSoup
-import pandas as pd
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+except ImportError:
+    letter = None
+    SimpleDocTemplate = None
+    Paragraph = None
+    Spacer = None
+    getSampleStyleSheet = None
 from pathlib import Path
 import re
 
@@ -452,6 +463,8 @@ class UniversalExtractor:
     
     def _format_as_csv(self, data: Dict[str, Any]) -> str:
         """Format as CSV"""
+        if pd is None:
+            return "Error: pandas library is not installed. Please install it to use CSV export."
         try:
             # Flatten the nested structure
             flattened = self._flatten_dict(data)
@@ -473,6 +486,8 @@ class UniversalExtractor:
     
     async def _format_as_pdf(self, data: Dict[str, Any], goal: str, job_id: str = None) -> str:
         """Format as PDF and return file path"""
+        if SimpleDocTemplate is None:
+            return "Error: reportlab library is not installed. Please install it to use PDF export."
         try:
             from reportlab.lib.pagesizes import letter
             from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
