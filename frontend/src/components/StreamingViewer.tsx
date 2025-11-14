@@ -70,6 +70,7 @@ export const StreamingViewer: React.FC<StreamingViewerProps> = ({ wsManager, job
 
   const handleConnect = () => {
     if (jobId) {
+      setShowStream(true);
       wsManager.connectStream(jobId);
     }
   };
@@ -128,7 +129,7 @@ export const StreamingViewer: React.FC<StreamingViewerProps> = ({ wsManager, job
               Enable streaming to watch BrowserPilot navigate websites in real-time
             </p>
             <button
-              onClick={() => setShowStream(true)}
+              onClick={handleConnect}
               className="px-6 py-3 bg-gradient-to-r from-stone-500 to-stone-600 text-white rounded-xl hover:from-stone-600 hover:to-stone-700 transition-all duration-300 flex items-center space-x-3 mx-auto group shadow-md hover:shadow-lg"
             >
               <Play className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
@@ -189,6 +190,16 @@ export const StreamingViewer: React.FC<StreamingViewerProps> = ({ wsManager, job
             <div className="bg-black/70 backdrop-blur-md rounded-xl p-4 border border-white/10">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowStream(false);
+                      handleDisconnect();
+                    }}
+                    className="px-4 py-2 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600 transition-all duration-200 flex items-center space-x-2 group"
+                  >
+                    <Square className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" />
+                    <span>Disable</span>
+                  </button>
                   <button
                     onClick={handleConnect}
                     disabled={isConnected || !jobId}
