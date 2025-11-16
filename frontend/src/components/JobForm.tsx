@@ -8,6 +8,68 @@ interface JobFormProps {
   onJobCreated: (data: { jobId: string; streaming: boolean; format: string }) => void;
 }
 
+const HISTORY_STORAGE_KEY = 'browserpilot_job_history';
+
+type StorageOptionValue = 'downloads' | 'drive' | 'notion' | 'custom';
+
+const STORAGE_OPTIONS: { value: StorageOptionValue; label: string; description: string }[] = [
+  {
+    value: 'downloads',
+    label: 'Descargar al finalizar',
+    description: 'Guarda el archivo en tu equipo desde el navegador'
+  },
+  {
+    value: 'drive',
+    label: 'Carpeta en Google Drive',
+    description: 'Envía el resultado a /BrowserPilot dentro de tu Drive'
+  },
+  {
+    value: 'notion',
+    label: 'Página o base de datos en Notion',
+    description: 'Actualiza tu documentación central automáticamente'
+  },
+  {
+    value: 'custom',
+    label: 'Otro destino',
+    description: 'Especifica manualmente dónde quieres guardar'
+  }
+];
+
+interface JobHistoryEntry {
+  prompt: string;
+  format: string;
+  headless: boolean;
+  streaming: boolean;
+  storageSelection: StorageOptionValue;
+  storageLabel: string;
+  timestamp: number;
+}
+
+const COMMAND_PRESETS = [
+  {
+    title: 'Abrir sitio y resumir',
+    description: 'Carga una página y resume su contenido',
+    command: 'Visita https://elpais.com, lee la portada y dame un resumen en español en formato Markdown.'
+  },
+  {
+    title: 'Búsqueda comparativa',
+    description: 'Compara dos productos y genera tabla',
+    command:
+      'Busca "mejores laptops 2024" en Google, abre los dos primeros artículos y genera una tabla comparativa en CSV con modelo, precio y puntos clave.'
+  },
+  {
+    title: 'Captura de precios',
+    description: 'Extrae precios en e-commerce',
+    command:
+      'Abre amazon.com y busca "monitores 4k". Extrae los cinco primeros resultados con precio y calificaciones como JSON.'
+  },
+  {
+    title: 'Descarga a PDF',
+    description: 'Guarda sección específica',
+    command: 'Visita https://firecrawl.dev/docs, navega a la sección Pricing y exporta esa sección como PDF.'
+  }
+];
+
 export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => {
   const [prompt, setPrompt] = useState('Navigate to Hacker News and extract the top 10 stories as JSON with titles, URLs, and scores');
   const [format, setFormat] = useState('json');
@@ -17,11 +79,52 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [detectedFormat, setDetectedFormat] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
+  const [history, setHistory] = useState<JobHistoryEntry[]>([]);
+  const [storageSelection, setStorageSelection] = useState<StorageOptionValue>('downloads');
+  const [customStorageLocation, setCustomStorageLocation] = useState('');
 
   useEffect(() => {
     const detected = detectFormatFromPrompt(prompt);
     setDetectedFormat(detected);
   }, [prompt]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (stored) {
+        const storedEntries = JSON.parse(stored) as JobHistoryEntry[];
+        setHistory(
+          storedEntries.map((entry) => {
+            const normalizedSelection = (entry.storageSelection as StorageOptionValue | undefined) ?? 'downloads';
+            const optionLabel =
+              entry.storageLabel ||
+              STORAGE_OPTIONS.find((option) => option.value === normalizedSelection)?.label ||
+              'Descargar al finalizar';
+
+            return {
+              ...entry,
+              storageSelection: normalizedSelection,
+              storageLabel: optionLabel
+            } as JobHistoryEntry;
+          })
+        );
+      }
+    } catch (error) {
+      console.error('Unable to read history', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (history.length === 0) {
+        localStorage.removeItem(HISTORY_STORAGE_KEY);
+        return;
+      }
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history.slice(0, 10)));
+    } catch (error) {
+      console.error('Unable to persist history', error);
+    }
+  }, [history]);
 
   const detectFormatFromPrompt = (text: string): string | null => {
     const lower = text.toLowerCase();
@@ -48,6 +151,11 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
 
     setIsSubmitting(true);
     const finalFormat = detectedFormat || format;
+    const selectedOption = STORAGE_OPTIONS.find(option => option.value === storageSelection);
+    const finalStorageLabel =
+      storageSelection === 'custom'
+        ? (customStorageLocation.trim() || 'Ubicación personalizada')
+        : (selectedOption?.label || 'Descargar al finalizar');
 
     try {
       const response = await fetch(`${API_BASE_URL}/job`, {
@@ -57,7 +165,8 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
           prompt,
           format: finalFormat,
           headless,
-          enable_streaming: streaming
+          enable_streaming: streaming,
+          storage_location: finalStorageLabel
         })
       });
 
@@ -68,6 +177,18 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
         streaming,
         format: finalFormat
       });
+      setHistory(prev => [
+        {
+          prompt,
+          format: finalFormat,
+          headless,
+          streaming,
+          storageSelection,
+          storageLabel: finalStorageLabel,
+          timestamp: Date.now()
+        },
+        ...prev
+      ].slice(0, 10));
     } catch (error) {
       console.error('Error creating job:', error);
     } finally {
@@ -192,6 +313,34 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
                 </button>
               </div>
             </div>
+
+            {/* Predefined Commands */}
+            <div className="mt-6">
+              <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-3">
+                Comandos predefinidos
+                <span className="text-stone-500 dark:text-stone-400 font-light ml-2">(pensados para flujos comunes)</span>
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {COMMAND_PRESETS.map((preset) => (
+                  <button
+                    key={preset.title}
+                    type="button"
+                    onClick={() => setPrompt(preset.command)}
+                    className="text-left p-3 bg-orange-50/70 dark:bg-stone-800/40 hover:bg-orange-100/80 dark:hover:bg-stone-700/50 border border-orange-200/70 dark:border-stone-600/60 rounded-lg transition-all duration-200 group backdrop-blur-sm"
+                  >
+                    <div className="text-sm font-medium text-stone-800 dark:text-stone-200 group-hover:text-stone-900 dark:group-hover:text-white">
+                      {preset.title}
+                    </div>
+                    <div className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                      {preset.description}
+                    </div>
+                    <div className="text-xs text-stone-400 dark:text-stone-500 mt-2 font-mono">
+                      {preset.command}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Format Detection Indicator */}
@@ -269,6 +418,55 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
             </div>
           </div>
 
+          {/* Storage Preference */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-stone-700">
+              ¿Dónde quieres guardar los resultados?
+              <span className="text-stone-500 font-light ml-2">BrowserPilot lo recordará para la próxima vez</span>
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {STORAGE_OPTIONS.map(option => (
+                <label
+                  key={option.value}
+                  className={`border rounded-xl p-4 cursor-pointer transition-all duration-200 backdrop-blur-sm ${
+                    storageSelection === option.value
+                      ? 'border-amber-400 bg-amber-50/70'
+                      : 'border-stone-200/70 bg-white/60 hover:border-stone-300'
+                  }`}
+                >
+                  <div className="flex items-start">
+                    <input
+                      type="radio"
+                      name="storage-preference"
+                      value={option.value}
+                      checked={storageSelection === option.value}
+                      onChange={() => {
+                        setStorageSelection(option.value);
+                        if (option.value !== 'custom') {
+                          setCustomStorageLocation('');
+                        }
+                      }}
+                      className="mt-1 w-4 h-4 text-amber-500 border-stone-300 focus:ring-amber-500"
+                    />
+                    <div className="ml-3">
+                      <p className="text-sm font-semibold text-stone-800">{option.label}</p>
+                      <p className="text-xs text-stone-500 mt-1">{option.description}</p>
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            {storageSelection === 'custom' && (
+              <input
+                type="text"
+                value={customStorageLocation}
+                onChange={(e) => setCustomStorageLocation(e.target.value)}
+                placeholder="Ejemplo: Carpeta compartida del equipo o bucket S3"
+                className="w-full px-4 py-3 border border-amber-300/70 rounded-xl focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 bg-white/70"
+              />
+            )}
+          </div>
+
           {/* Action Buttons */}
           <div className="flex flex-wrap gap-4 pt-6 border-t border-stone-200/60">
             <button
@@ -291,6 +489,69 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
             </button>
           </div>
         </form>
+
+        {/* History */}
+        {history.length > 0 && (
+          <div className="mt-10 p-5 border border-stone-200/70 dark:border-stone-700/60 rounded-2xl bg-stone-50/60 dark:bg-stone-900/40 backdrop-blur-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-semibold text-stone-800 dark:text-stone-200">Historial reciente</h3>
+                <p className="text-sm text-stone-500">Vuelve a ejecutar tareas con un solo clic</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistory([])}
+                className="text-xs text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-white"
+              >
+                Limpiar
+              </button>
+            </div>
+            <div className="space-y-3 max-h-64 overflow-auto pr-1">
+              {history.map((entry) => (
+                <div
+                  key={`${entry.timestamp}-${entry.prompt.slice(0, 10)}`}
+                  className="p-3 rounded-xl border border-stone-200/70 dark:border-stone-700/60 bg-white/70 dark:bg-stone-800/40 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                >
+                  <div>
+                    <p className="text-sm text-stone-800 dark:text-stone-100 line-clamp-2">{entry.prompt}</p>
+                    <div className="text-xs text-stone-500 dark:text-stone-400 mt-1 flex flex-wrap gap-3">
+                      <span className="uppercase font-semibold">{entry.format}</span>
+                      <span>{entry.headless ? 'Headless' : 'Visible'}</span>
+                      <span>{entry.streaming ? 'Streaming ON' : 'Streaming OFF'}</span>
+                      <span className="flex items-center gap-1">
+                        <span className="text-amber-500">⬇️</span>
+                        {entry.storageLabel}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-end md:self-auto">
+                    <span className="text-xs text-stone-400">
+                      {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrompt(entry.prompt);
+                        setFormat(entry.format);
+                        setHeadless(entry.headless);
+                        setStreaming(entry.streaming);
+                        setStorageSelection(entry.storageSelection);
+                        if (entry.storageSelection === 'custom') {
+                          setCustomStorageLocation(entry.storageLabel);
+                        } else {
+                          setCustomStorageLocation('');
+                        }
+                      }}
+                      className="px-3 py-1 text-xs rounded-lg bg-stone-900 text-white hover:bg-stone-700 transition-colors"
+                    >
+                      Usar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
