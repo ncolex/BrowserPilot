@@ -36,6 +36,7 @@ class JobRequest(BaseModel):
     format: str = "txt" # txt | md | json | html | csv | pdf
     headless: bool = False
     enable_streaming: bool = False
+    storage_location: str | None = None
 
 async def store_job_info(job_id: str, info: dict):
     """Store job information for later retrieval"""
@@ -61,6 +62,7 @@ async def create_job(req: JobRequest):
     print(f"🌐 Format: {req.format}")
     print(f"🖥️ Headless: {req.headless}")
     print(f"📡 Streaming: {req.enable_streaming}")
+    print(f"🗂️ Storage preference: {req.storage_location or 'Descargar al finalizar'}")
     print(f"🔄 Selected proxy: {proxy.get('server', 'None') if proxy else 'None'}")
     
     # Get initial proxy stats
@@ -68,7 +70,15 @@ async def create_job(req: JobRequest):
     print(f"📊 Proxy pool stats: {proxy_stats}")
     
     # Create the agent task
-    coro = run_agent(job_id, req.prompt, req.format, req.headless, proxy, req.enable_streaming)
+    coro = run_agent(
+        job_id,
+        req.prompt,
+        req.format,
+        req.headless,
+        proxy,
+        req.enable_streaming,
+        req.storage_location,
+    )
     tasks[job_id] = asyncio.create_task(coro)
     
     response = {

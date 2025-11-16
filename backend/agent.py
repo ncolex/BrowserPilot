@@ -53,8 +53,15 @@ def get_content_type(fmt: str) -> str:
     }
     return content_types.get(fmt, 'application/octet-stream')
 
-async def run_agent(job_id: str, prompt: str, fmt: Literal["txt","md","json","html","csv","pdf"],
-                   headless: bool, proxy: dict | None, enable_streaming: bool = False):
+async def run_agent(
+    job_id: str,
+    prompt: str,
+    fmt: Literal["txt", "md", "json", "html", "csv", "pdf"],
+    headless: bool,
+    proxy: dict | None,
+    enable_streaming: bool = False,
+    storage_location: str | None = None,
+):
     """Enhanced agent with smart proxy rotation and vision-based anti-bot detection"""
     from backend.main import broadcast, OUTPUT_DIR, register_streaming_session, store_job_info
     
@@ -83,7 +90,8 @@ async def run_agent(job_id: str, prompt: str, fmt: Literal["txt","md","json","ht
             "format": fmt,
             "content_type": get_content_type(fmt),
             "extension": get_file_extension(fmt),
-            "prompt": prompt
+            "prompt": prompt,
+            "storage_location": storage_location,
         })
         
         # Show initial proxy stats
