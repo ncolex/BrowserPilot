@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Header } from './Header';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Header, ActivityLogEntry } from './Header';
 import { JobForm } from './JobForm';
 import { StatusDisplay } from './StatusDisplay';
 import { TokenUsage } from './TokenUsage';
@@ -32,18 +32,67 @@ export const BrowserPilotDashboard: React.FC = () => {
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingEnabled, setStreamingEnabled] = useState(false);
+  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+
+  const updateTokenUsage = useCallback((usage: any) => {
+    setTokenUsage(prev => ({
+      prompt_tokens: prev.prompt_tokens + (usage.prompt_tokens || 0),
+      response_tokens: prev.response_tokens + (usage.response_tokens || 0),
+      total_tokens: prev.total_tokens + (usage.total_tokens || 0),
+      api_calls: prev.api_calls + 1
+    }));
+  }, []);
+
+  const recordActivity = useCallback(
+    (entry: Omit<ActivityLogEntry, 'id' | 'timestamp'> & { timestamp?: number }) => {
+      setActivityLog(prev => {
+        const newEntry: ActivityLogEntry = {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          timestamp: entry.timestamp ?? Date.now(),
+          ...entry
+        };
+        const updated = [newEntry, ...prev];
+        return updated.slice(0, 15);
+      });
+    },
+    []
+  );
 
   useEffect(() => {
     // Set up WebSocket event listeners
     wsManager.on('connected', () => {
       setStatus({ message: 'Connected to BrowserPilot server', type: 'success' });
+      setIsConnected(true);
+      recordActivity({
+        label: 'Conexión establecida',
+        detail: 'Sincronizando con BrowserPilot en tiempo real',
+        level: 90,
+        type: 'info'
+      });
       setIsLoading(false);
+    });
+
+    wsManager.on('disconnected', (data: any) => {
+      setIsConnected(false);
+      recordActivity({
+        label: 'Conexión perdida',
+        detail: data?.reason ? `${data.reason} (código ${data.code})` : 'Intentando reconectar...',
+        level: 60,
+        type: 'error'
+      });
     });
 
     wsManager.on('decision', (data: any) => {
       const decision = data.decision || data;
       setDecisions(prev => [...prev, decision]);
-      
+      recordActivity({
+        label: decision.action?.toUpperCase() || 'ANALIZANDO',
+        detail: decision.reason || decision.text || 'Procesando decisión',
+        level: 70,
+        type: 'action'
+      });
+
       if (decision.token_usage) {
         updateTokenUsage(decision.token_usage);
       }
@@ -69,6 +118,12 @@ export const BrowserPilotDashboard: React.FC = () => {
         message: `Navigating: ${data.url} • Found ${data.interactive_elements} interactive elements`,
         type: 'info'
       });
+      recordActivity({
+        label: 'Navegando',
+        detail: data.url || 'Actualizando página',
+        level: 55,
+        type: 'action'
+      });
     });
 
     wsManager.on('extraction', (data: any) => {
@@ -76,6 +131,12 @@ export const BrowserPilotDashboard: React.FC = () => {
         setStatus({
           message: `Extraction completed successfully in ${data.format?.toUpperCase()} format`,
           type: 'success'
+        });
+        recordActivity({
+          label: 'Extracción finalizada',
+          detail: `Formato ${data.format?.toUpperCase() || 'N/A'}`,
+          level: 85,
+          type: 'info'
         });
       }
     });
@@ -85,29 +146,42 @@ export const BrowserPilotDashboard: React.FC = () => {
         message: data.message || data.error || 'An unexpected error occurred',
         type: 'error'
       });
+      setIsConnected(false);
+      recordActivity({
+        label: 'Error detectado',
+        detail: data.message || data.error || 'Se requiere atención',
+        level: 95,
+        type: 'error'
+      });
       setIsLoading(false);
+    });
+
+    wsManager.on('status', (data: any) => {
+      recordActivity({
+        label: data.status?.toUpperCase() || 'Actualización',
+        detail: data.message || 'Seguimiento en curso',
+        level: 50,
+        type: data.status === 'error' ? 'error' : 'info'
+      });
     });
 
     return () => {
       wsManager.disconnect();
       wsManager.disconnectStream();
     };
-  }, [wsManager]);
-
-  const updateTokenUsage = (usage: any) => {
-    setTokenUsage(prev => ({
-      prompt_tokens: prev.prompt_tokens + (usage.prompt_tokens || 0),
-      response_tokens: prev.response_tokens + (usage.response_tokens || 0),
-      total_tokens: prev.total_tokens + (usage.total_tokens || 0),
-      api_calls: prev.api_calls + 1
-    }));
-  };
+  }, [wsManager, updateTokenUsage, recordActivity]);
 
   const handleJobCreated = (jobData: { jobId: string; streaming: boolean; format: string }) => {
     console.log('Job created:', jobData);
     setCurrentJobId(jobData.jobId);
     setIsLoading(true);
     setStreamingEnabled(jobData.streaming);
+    recordActivity({
+      label: 'Nuevo trabajo',
+      detail: `Formato ${jobData.format.toUpperCase()} • Streaming ${jobData.streaming ? 'on' : 'off'}`,
+      level: 80,
+      type: 'action'
+    });
     wsManager.connect(jobData.jobId);
   };
 
@@ -116,7 +190,7 @@ export const BrowserPilotDashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/30 to-orange-50/20 dark:from-stone-900 dark:via-stone-800 dark:to-stone-700 transition-all duration-1000">
-      <Header />
+      <Header activityLog={activityLog} isConnected={isConnected} currentJobId={currentJobId} />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Welcome Animation */}

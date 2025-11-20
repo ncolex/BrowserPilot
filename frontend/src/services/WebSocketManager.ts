@@ -72,7 +72,8 @@ export class WebSocketManager {
     this.websocket.onclose = (event: CloseEvent) => {
       console.log('📡 WebSocket disconnected:', event.code, event.reason);
       this.websocket = null;
-      
+      this.emit('disconnected', { status: 'disconnected', code: event.code, reason: event.reason });
+
       if (this.reconnectAttempts < this.maxReconnectAttempts) {
         this.reconnectAttempts++;
         console.log(`🔄 Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
