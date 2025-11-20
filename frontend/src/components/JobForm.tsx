@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Download, Monitor, Eye, EyeOff, Sparkles, ArrowRight } from 'lucide-react';
+import { Play, Download, Monitor, Eye, EyeOff, Sparkles, ArrowRight, Image as ImageIcon } from 'lucide-react';
 import { WebSocketManager } from '../services/WebSocketManager';
 const API_BASE_URL = '';
 
@@ -42,6 +42,7 @@ interface JobHistoryEntry {
   streaming: boolean;
   storageSelection: StorageOptionValue;
   storageLabel: string;
+   includeImages: boolean;
   timestamp: number;
 }
 
@@ -87,6 +88,7 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
   const [format, setFormat] = useState('json');
   const [headless, setHeadless] = useState(false);
   const [streaming, setStreaming] = useState(true);
+  const [includeImages, setIncludeImages] = useState(true);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [detectedFormat, setDetectedFormat] = useState<string | null>(null);
@@ -116,7 +118,8 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
             return {
               ...entry,
               storageSelection: normalizedSelection,
-              storageLabel: optionLabel
+              storageLabel: optionLabel,
+              includeImages: entry.includeImages ?? true
             } as JobHistoryEntry;
           })
         );
@@ -163,6 +166,7 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
 
     setIsSubmitting(true);
     const finalFormat = detectedFormat || format;
+    const finalIncludeImages = finalFormat === 'pdf' ? includeImages : false;
     const selectedOption = STORAGE_OPTIONS.find(option => option.value === storageSelection);
     const finalStorageLabel =
       storageSelection === 'custom'
@@ -178,7 +182,8 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
           format: finalFormat,
           headless,
           enable_streaming: streaming,
-          storage_location: finalStorageLabel
+          storage_location: finalStorageLabel,
+          include_images: finalIncludeImages
         })
       });
 
@@ -197,6 +202,7 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
           streaming,
           storageSelection,
           storageLabel: finalStorageLabel,
+          includeImages: finalIncludeImages,
           timestamp: Date.now()
         },
         ...prev
@@ -226,6 +232,9 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
       console.error('Download error:', error);
     }
   };
+
+  const activeFormat = detectedFormat || format;
+  const pdfSelected = activeFormat === 'pdf';
 
   return (
     <div 
@@ -460,6 +469,26 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
                     </span>
                   </div>
                 </label>
+                <label className="flex items-center cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={includeImages}
+                    onChange={(e) => setIncludeImages(e.target.checked)}
+                    disabled={!pdfSelected}
+                    className="w-4 h-4 text-amber-600 border-stone-300 dark:border-stone-600 rounded focus:ring-amber-500/20 focus:ring-2 bg-white dark:bg-stone-800 disabled:opacity-60"
+                  />
+                  <div className="ml-3">
+                    <div className="flex items-center">
+                      <ImageIcon className="w-4 h-4 text-stone-600 dark:text-stone-400 mr-2" />
+                      <span className="text-sm text-stone-700 dark:text-stone-300 group-hover:text-stone-900 dark:group-hover:text-stone-100 transition-colors">
+                        Incluir imágenes en PDF
+                      </span>
+                    </div>
+                    <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                      Se añadirán capturas y fotos cuando el formato sea PDF
+                    </p>
+                  </div>
+                </label>
               </div>
             </div>
           </div>
@@ -564,6 +593,7 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
                       <span className="uppercase font-semibold">{entry.format}</span>
                       <span>{entry.headless ? 'Headless' : 'Visible'}</span>
                       <span>{entry.streaming ? 'Streaming ON' : 'Streaming OFF'}</span>
+                      <span>{entry.includeImages ? 'Imágenes ON' : 'Imágenes OFF'}</span>
                       <span className="flex items-center gap-1">
                         <span className="text-amber-500">⬇️</span>
                         {entry.storageLabel}
@@ -581,6 +611,7 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
                         setFormat(entry.format);
                         setHeadless(entry.headless);
                         setStreaming(entry.streaming);
+                        setIncludeImages(entry.includeImages ?? true);
                         setStorageSelection(entry.storageSelection);
                         if (entry.storageSelection === 'custom') {
                           setCustomStorageLocation(entry.storageLabel);

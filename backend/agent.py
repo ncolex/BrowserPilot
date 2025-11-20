@@ -61,6 +61,7 @@ async def run_agent(
     proxy: dict | None,
     enable_streaming: bool = False,
     storage_location: str | None = None,
+    include_images: bool = False,
 ):
     """Enhanced agent with smart proxy rotation and vision-based anti-bot detection"""
     from backend.main import broadcast, OUTPUT_DIR, register_streaming_session, store_job_info
@@ -92,6 +93,7 @@ async def run_agent(
             "extension": get_file_extension(fmt),
             "prompt": prompt,
             "storage_location": storage_location,
+            "include_images": include_images,
         })
         
         # Show initial proxy stats
@@ -290,7 +292,7 @@ async def run_agent(
                         })
                         
                         # Use universal extraction with specified format
-                        content_result = await extractor.extract_intelligent_content(browser, prompt, fmt, job_id)
+                        content_result = await extractor.extract_intelligent_content(browser, prompt, fmt, job_id, include_images)
                         
                         # Save content with proper extension
                         file_extension = get_file_extension(fmt)
@@ -335,7 +337,7 @@ async def run_agent(
         if extraction_attempts == 0:
             print(f"🔍 Performing final extraction in {fmt} format...")
             try:
-                content_result = await extractor.extract_intelligent_content(browser, prompt, fmt, job_id)
+                content_result = await extractor.extract_intelligent_content(browser, prompt, fmt, job_id, include_images)
                 
                 file_extension = get_file_extension(fmt)
                 output_file = OUTPUT_DIR / f"{job_id}.{file_extension}"
