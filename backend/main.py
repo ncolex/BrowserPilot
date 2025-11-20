@@ -37,6 +37,7 @@ class JobRequest(BaseModel):
     headless: bool = False
     enable_streaming: bool = False
     storage_location: str | None = None
+    include_images: bool = False
 
 async def store_job_info(job_id: str, info: dict):
     """Store job information for later retrieval"""
@@ -63,6 +64,7 @@ async def create_job(req: JobRequest):
     print(f"🖥️ Headless: {req.headless}")
     print(f"📡 Streaming: {req.enable_streaming}")
     print(f"🗂️ Storage preference: {req.storage_location or 'Descargar al finalizar'}")
+    print(f"🖼️ Include images in PDF: {req.include_images}")
     print(f"🔄 Selected proxy: {proxy.get('server', 'None') if proxy else 'None'}")
     
     # Get initial proxy stats
@@ -78,6 +80,7 @@ async def create_job(req: JobRequest):
         proxy,
         req.enable_streaming,
         req.storage_location,
+        req.include_images,
     )
     tasks[job_id] = asyncio.create_task(coro)
     

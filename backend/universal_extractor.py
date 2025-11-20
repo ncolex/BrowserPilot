@@ -1,6 +1,7 @@
 import json
 import asyncio
 import functools
+import io
 from typing import Dict, Any, List, Optional
 import google.generativeai as genai
 from backend.browser_controller import BrowserController
@@ -8,10 +9,12 @@ import base64
 from bs4 import BeautifulSoup
 import pandas as pd
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.utils import ImageReader
 from pathlib import Path
 import re
+import requests
 
 MODEL = genai.GenerativeModel("gemini-2.5-flash-preview-05-20")
 
@@ -92,7 +95,14 @@ class UniversalExtractor:
     def __init__(self):
         self.extraction_cache = {}
     
-    async def extract_intelligent_content(self, browser: BrowserController, goal: str, fmt: str = "json", job_id: str = None) -> str:
+    async def extract_intelligent_content(
+        self,
+        browser: BrowserController,
+        goal: str,
+        fmt: str = "json",
+        job_id: str = None,
+        include_images: bool = False,
+    ) -> str:
         """Extract content intelligently from any website based on user's goal"""
         try:
             # Get comprehensive page information
@@ -107,10 +117,15 @@ class UniversalExtractor:
             
             # Use AI to extract relevant information
             extracted_data = await self._ai_extract(goal, url, title, website_type, content)
-            
+
+            if include_images and fmt == "pdf":
+                media = extracted_data.get("_media", {})
+                media["images"] = await self._collect_images(browser)
+                extracted_data["_media"] = media
+
             # Format the output based on requested format
-            return await self._format_output(extracted_data, fmt, goal, job_id)  # Pass job_id
-                
+            return await self._format_output(extracted_data, fmt, goal, job_id, include_images)  # Pass job_id
+
         except Exception as e:
             print(f"❌ Universal extraction failed: {e}")
             return await self._fallback_extraction(browser, fmt, goal)
@@ -215,6 +230,70 @@ class UniversalExtractor:
                 return await browser.page.inner_text("body")[:8000]
             except:
                 return "Content extraction failed"
+
+    async def _collect_images(self, browser: BrowserController, max_images: int = 4) -> List[Dict[str, str]]:
+        """Collect key images from the current page for PDF embedding"""
+        try:
+            image_urls = await browser.page.evaluate(
+                """
+                () => Array.from(document.images || [])
+                  .map(img => {
+                    try {
+                      return new URL(img.src, window.location.href).href;
+                    } catch (e) {
+                      return null;
+                    }
+                  })
+                  .filter(Boolean);
+                """
+            )
+
+            unique_urls: List[str] = []
+            for url in image_urls:
+                if url and url not in unique_urls and (
+                    url.startswith("http://") or url.startswith("https://") or url.startswith("data:")
+                ):
+                    unique_urls.append(url)
+                if len(unique_urls) >= max_images * 2:
+                    break
+
+            collected: List[Dict[str, str]] = []
+            for url in unique_urls:
+                if len(collected) >= max_images:
+                    break
+
+                if url.startswith("data:"):
+                    try:
+                        header, encoded = url.split(",", 1)
+                        collected.append({
+                            "url": header.replace("data:", "inline:"),
+                            "data": encoded
+                        })
+                    except Exception as data_error:
+                        print(f"⚠️ Failed to parse inline image: {data_error}")
+                    continue
+
+                try:
+                    response = await asyncio.to_thread(requests.get, url, timeout=10)
+                    if response.status_code == 200 and response.content:
+                        encoded = base64.b64encode(response.content).decode("utf-8")
+                        collected.append({
+                            "url": url,
+                            "data": encoded
+                        })
+                except Exception as download_error:
+                    print(f"⚠️ Could not download image {url}: {download_error}")
+
+            if collected:
+                print(f"🖼️ Collected {len(collected)} images for PDF embedding")
+            else:
+                print("ℹ️ No images collected for PDF")
+
+            return collected
+
+        except Exception as e:
+            print(f"⚠️ Image collection failed: {e}")
+            return []
     
     async def _ai_extract(self, goal: str, url: str, title: str, website_type: str, content: str) -> Dict[str, Any]:
         """Use AI to extract relevant information based on context"""
@@ -324,7 +403,7 @@ class UniversalExtractor:
         
         return summary
     
-    async def _format_output(self, data: Dict[str, Any], fmt: str, goal: str, job_id: str = None) -> str:
+    async def _format_output(self, data: Dict[str, Any], fmt: str, goal: str, job_id: str = None, include_images: bool = False) -> str:
         """Format extracted data in the requested format"""
         if fmt == "json":
             return json.dumps(data, indent=2, ensure_ascii=False)
@@ -337,7 +416,7 @@ class UniversalExtractor:
         elif fmt == "csv":
             return self._format_as_csv(data)
         elif fmt == "pdf":
-            return await self._format_as_pdf(data, goal, job_id)  # Pass job_id
+            return await self._format_as_pdf(data, goal, job_id, include_images)  # Pass job_id
         else:
             return json.dumps(data, indent=2, ensure_ascii=False)
 
@@ -356,12 +435,14 @@ class UniversalExtractor:
             lines.append("")
         
         def format_item(key: str, value, indent: int = 0):
+            if key in ("_metadata", "_media"):
+                return
+
             spaces = "  " * indent
             if isinstance(value, dict):
-                if key != "_metadata":
-                    lines.append(f"{spaces}{key.replace('_', ' ').title()}:")
-                    for k, v in value.items():
-                        format_item(k, v, indent + 1)
+                lines.append(f"{spaces}{key.replace('_', ' ').title()}:")
+                for k, v in value.items():
+                    format_item(k, v, indent + 1)
             elif isinstance(value, list):
                 lines.append(f"{spaces}{key.replace('_', ' ').title()}:")
                 for item in value:
@@ -393,12 +474,14 @@ class UniversalExtractor:
             lines.append("")
         
         def format_item(key: str, value, level: int = 2):
+            if key in ("_metadata", "_media"):
+                return
+
             if isinstance(value, dict):
-                if key != "_metadata":
-                    lines.append(f"{'#' * level} {key.replace('_', ' ').title()}")
-                    lines.append("")
-                    for k, v in value.items():
-                        format_item(k, v, level + 1)
+                lines.append(f"{'#' * level} {key.replace('_', ' ').title()}")
+                lines.append("")
+                for k, v in value.items():
+                    format_item(k, v, level + 1)
             elif isinstance(value, list):
                 lines.append(f"{'#' * level} {key.replace('_', ' ').title()}")
                 lines.append("")
@@ -430,11 +513,13 @@ class UniversalExtractor:
             html_parts.append("</div>")
         
         def format_item(key: str, value, level: int = 2):
+            if key in ("_metadata", "_media"):
+                return
+
             if isinstance(value, dict):
-                if key != "_metadata":
-                    html_parts.append(f"<h{level}>{key.replace('_', ' ').title()}</h{level}>")
-                    for k, v in value.items():
-                        format_item(k, v, min(level + 1, 6))
+                html_parts.append(f"<h{level}>{key.replace('_', ' ').title()}</h{level}>")
+                for k, v in value.items():
+                    format_item(k, v, min(level + 1, 6))
             elif isinstance(value, list):
                 html_parts.append(f"<h{level}>{key.replace('_', ' ').title()}</h{level}>")
                 html_parts.append("<ul>")
@@ -471,7 +556,7 @@ class UniversalExtractor:
                     csv_lines.append(f'"{key}","{clean_value}"')
             return "\n".join(csv_lines)
     
-    async def _format_as_pdf(self, data: Dict[str, Any], goal: str, job_id: str = None) -> str:
+    async def _format_as_pdf(self, data: Dict[str, Any], goal: str, job_id: str = None, include_images: bool = False) -> str:
         """Format as PDF and return file path"""
         try:
             from reportlab.lib.pagesizes import letter
@@ -495,7 +580,8 @@ class UniversalExtractor:
             doc = SimpleDocTemplate(str(filepath), pagesize=letter, topMargin=72, bottomMargin=72)
             styles = getSampleStyleSheet()
             story = []
-            
+            available_width = doc.width
+
             # Title
             story.append(Paragraph("Extracted Information", styles['Title']))
             story.append(Spacer(1, 20))
@@ -510,14 +596,16 @@ class UniversalExtractor:
             
             # Content with better handling
             def add_content(key: str, value, level: int = 0):
+                if key in ("_metadata", "_media"):
+                    return
+
                 if isinstance(value, dict):
-                    if key != "_metadata":
-                        style = styles['Heading1'] if level == 0 else styles['Heading2']
-                        clean_key = html.escape(key.replace('_', ' ').title())
-                        story.append(Paragraph(clean_key, style))
-                        story.append(Spacer(1, 10))
-                        for k, v in value.items():
-                            add_content(k, v, level + 1)
+                    style = styles['Heading1'] if level == 0 else styles['Heading2']
+                    clean_key = html.escape(key.replace('_', ' ').title())
+                    story.append(Paragraph(clean_key, style))
+                    story.append(Spacer(1, 10))
+                    for k, v in value.items():
+                        add_content(k, v, level + 1)
                 elif isinstance(value, list):
                     clean_key = html.escape(key.replace('_', ' ').title())
                     story.append(Paragraph(f"<b>{clean_key}:</b>", styles['Normal']))
@@ -537,10 +625,45 @@ class UniversalExtractor:
                         value_str = value_str[:800] + "..."
                     story.append(Paragraph(f"<b>{clean_key}:</b> {value_str}", styles['Normal']))
                     story.append(Spacer(1, 8))
-            
+
+            def add_images():
+                if not include_images:
+                    return
+
+                image_entries = data.get("_media", {}).get("images", [])
+                if not image_entries:
+                    return
+
+                story.append(Paragraph("Images", styles['Heading2']))
+                story.append(Spacer(1, 10))
+
+                for idx, image_entry in enumerate(image_entries, start=1):
+                    try:
+                        img_data = base64.b64decode(image_entry.get("data", ""))
+                        reader = ImageReader(io.BytesIO(img_data))
+                        img_width, img_height = reader.getSize()
+
+                        if img_width > available_width:
+                            scale = available_width / float(img_width)
+                            img_width = available_width
+                            img_height = img_height * scale
+
+                        story.append(Image(reader, width=img_width, height=img_height))
+
+                        caption = image_entry.get("url")
+                        if caption:
+                            safe_caption = html.escape(str(caption))
+                            story.append(Paragraph(f"<font size=8 color='#666666'>Image {idx}: {safe_caption}</font>", styles['Normal']))
+
+                        story.append(Spacer(1, 12))
+                    except Exception as image_error:
+                        print(f"⚠️ Could not add image to PDF: {image_error}")
+
             for key, value in data.items():
                 add_content(key, value)
-            
+
+            add_images()
+
             # Build PDF with error handling
             try:
                 doc.build(story)
@@ -557,7 +680,7 @@ class UniversalExtractor:
             try:
                 subprocess.check_call([sys.executable, "-m", "pip", "install", "reportlab"])
                 # Try again after installation
-                return await self._format_as_pdf(data, goal, job_id)
+                return await self._format_as_pdf(data, goal, job_id, include_images)
             except subprocess.CalledProcessError:
                 print("❌ Failed to install ReportLab")
                 raise ImportError("ReportLab installation failed")
