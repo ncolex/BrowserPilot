@@ -52,6 +52,12 @@ const COMMAND_PRESETS = [
     command: 'Visita https://elpais.com, lee la portada y dame un resumen en español en formato Markdown.'
   },
   {
+    title: 'Buscar en varios sitios',
+    description: 'Consulta múltiples fuentes y resume hallazgos',
+    command:
+      'Busca en Google y Bing "tendencias IA 2024". Abre los 5 primeros resultados combinados, elimina duplicados y crea un resumen con las ideas clave en Markdown.'
+  },
+  {
     title: 'Búsqueda comparativa',
     description: 'Compara dos productos y genera tabla',
     command:
@@ -62,6 +68,12 @@ const COMMAND_PRESETS = [
     description: 'Extrae precios en e-commerce',
     command:
       'Abre amazon.com y busca "monitores 4k". Extrae los cinco primeros resultados con precio y calificaciones como JSON.'
+  },
+  {
+    title: 'Descargar imágenes a PDF',
+    description: 'Convierte imágenes encontradas en un PDF',
+    command:
+      'Visita unsplash.com y pexels.com, busca "playa al atardecer", descarga las primeras 4 imágenes únicas y combínalas en un PDF con títulos breves.'
   },
   {
     title: 'Descarga a PDF',
@@ -272,7 +284,24 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
                     Extract top stories as JSON
                   </div>
                 </button>
-                
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPrompt(
+                      'Busca en Google y Bing "tendencias IA 2024", revisa los resultados principales y crea un resumen en formato Markdown.'
+                    )
+                  }
+                  className="text-left p-3 bg-stone-50/80 dark:bg-stone-800/50 hover:bg-stone-100/80 dark:hover:bg-stone-700/50 border border-stone-200/60 dark:border-stone-600/60 rounded-lg transition-all duration-200 group backdrop-blur-sm"
+                >
+                  <div className="text-sm font-medium text-stone-700 dark:text-stone-300 group-hover:text-stone-900 dark:group-hover:text-stone-100">
+                    Búsqueda en varios sitios
+                  </div>
+                  <div className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                    Cruza resultados y resume tendencias
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setPrompt("Visit firecrawl.dev pricing page and save to PDF format")}
@@ -285,7 +314,24 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
                     Convert webpage to PDF
                   </div>
                 </button>
-                
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPrompt(
+                      'Abre unsplash.com y pexels.com, busca "playa al atardecer" y descarga las primeras imágenes para unirlas en un PDF.'
+                    )
+                  }
+                  className="text-left p-3 bg-stone-50/80 dark:bg-stone-800/50 hover:bg-stone-100/80 dark:hover:bg-stone-700/50 border border-stone-200/60 dark:border-stone-600/60 rounded-lg transition-all duration-200 group backdrop-blur-sm"
+                >
+                  <div className="text-sm font-medium text-stone-700 dark:text-stone-300 group-hover:text-stone-900 dark:group-hover:text-stone-100">
+                    Descargar imágenes a PDF
+                  </div>
+                  <div className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                    Combina capturas en un documento
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setPrompt("Search 'AI tools' and export results as CSV")}
