@@ -1,5 +1,14 @@
-import React, { useState } from 'react';
-import { Activity, Settings, User, Moon, Sun } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Activity, Settings, User, Moon, Sun, Radio, Timer, AlertCircle } from 'lucide-react';
+
+export interface ActivityLogEntry {
+  id: string;
+  label: string;
+  detail: string;
+  level: number;
+  type: 'info' | 'action' | 'error';
+  timestamp: number;
+}
 
 
 
@@ -18,7 +27,105 @@ const BrowserPilotLogo = ({ className = "" }) => (
 );
 
 
-export const Header: React.FC = () => {
+const LiveActivityBar: React.FC<{
+  activityLog: ActivityLogEntry[];
+  isConnected: boolean;
+  currentJobId?: string | null;
+}> = ({ activityLog, isConnected, currentJobId }) => {
+  const recentLog = useMemo(() => activityLog.slice(0, 8), [activityLog]);
+
+  const samples = useMemo(() => {
+    const base = recentLog.map(entry => Math.min(100, Math.max(10, entry.level)));
+    // Pad with subtle idle pulses so the graph never feels empty
+    while (base.length < 12) {
+      base.unshift(20 + base.length * 4);
+    }
+    return base.slice(-12);
+  }, [recentLog]);
+
+  const statusColor = isConnected ? 'text-emerald-500' : 'text-amber-500';
+  const statusLabel = isConnected ? 'Conectado' : 'Reconectando';
+
+  return (
+    <div className="mt-3 rounded-2xl border border-stone-200/60 dark:border-stone-700/60 bg-gradient-to-r from-white/80 via-amber-50/60 to-white/80 dark:from-stone-900/70 dark:via-stone-800/70 dark:to-stone-900/70 shadow-sm">
+      <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center space-x-3">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-white/70 dark:bg-stone-800/60 border border-stone-200/60 dark:border-stone-700/60 ${isConnected ? 'shadow-emerald-100' : 'shadow-amber-100'} shadow-sm`}>
+            <Radio className={`w-5 h-5 ${statusColor} ${isConnected ? 'animate-pulse' : ''}`} />
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400 font-semibold">Actividad en vivo</p>
+            <div className="flex items-center space-x-2 text-sm text-stone-700 dark:text-stone-200">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100/80 dark:bg-stone-800/80 border border-stone-200/60 dark:border-stone-700/60 ${statusColor}`}>
+                {statusLabel}
+              </span>
+              {currentJobId && (
+                <span className="text-xs text-stone-500 dark:text-stone-400">ID: {currentJobId.slice(0, 8)}...</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 min-w-[260px] max-w-xl">
+          <div className="grid grid-cols-12 gap-1 h-10 items-end">
+            {samples.map((value, index) => (
+              <span
+                key={index}
+                className="block rounded-t-lg bg-gradient-to-t from-amber-200/60 via-orange-300/70 to-amber-500/90 dark:from-stone-700 dark:via-amber-500/70 dark:to-orange-400/80 transition-all duration-500"
+                style={{ height: `${value}%`, opacity: 0.7 + index * 0.02 }}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-3 text-xs text-stone-600 dark:text-stone-300">
+          <Timer className="w-4 h-4 text-amber-500" />
+          <span className="font-medium">Últimos movimientos</span>
+        </div>
+      </div>
+
+      <div className="border-t border-stone-200/70 dark:border-stone-700/70 px-4 py-2 overflow-x-auto whitespace-nowrap flex space-x-3">
+        {recentLog.length === 0 ? (
+          <div className="flex items-center space-x-2 text-xs text-stone-500 dark:text-stone-400 py-1">
+            <AlertCircle className="w-4 h-4" />
+            <span>En espera de actividad en tiempo real...</span>
+          </div>
+        ) : (
+          recentLog.map(entry => (
+            <div
+              key={entry.id}
+              className="flex items-center space-x-2 px-3 py-2 rounded-xl bg-white/80 dark:bg-stone-800/70 border border-stone-200/60 dark:border-stone-700/60 shadow-sm"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  entry.type === 'error'
+                    ? 'bg-rose-500'
+                    : entry.type === 'action'
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                } animate-pulse`}
+              />
+              <div className="text-xs">
+                <p className="font-semibold text-stone-700 dark:text-stone-100">{entry.label}</p>
+                <p className="text-stone-500 dark:text-stone-400">{entry.detail}</p>
+              </div>
+              <span className="text-[10px] text-stone-400 dark:text-stone-500 font-mono">
+                {new Date(entry.timestamp).toLocaleTimeString()}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+export const Header: React.FC<{
+  activityLog: ActivityLogEntry[];
+  isConnected: boolean;
+  currentJobId?: string | null;
+}> = ({ activityLog, isConnected, currentJobId }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
@@ -45,8 +152,13 @@ export const Header: React.FC = () => {
           <div className="flex items-center space-x-6">
             {/* Status Indicator */}
             <div className="flex items-center space-x-3 px-4 py-2 bg-stone-50 dark:bg-stone-800 rounded-full border border-stone-200/60 dark:border-stone-700/60 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors duration-200">
-              <Activity className="w-4 h-4 text-emerald-500 animate-pulse" />
-              <span className="text-sm text-stone-600 dark:text-stone-300 font-medium">Active</span>
+              <Activity className={`w-4 h-4 ${isConnected ? 'text-emerald-500 animate-pulse' : 'text-amber-500 animate-spin'}`} />
+              <div className="text-left">
+                <span className="block text-sm text-stone-700 dark:text-stone-200 font-medium">
+                  {isConnected ? 'Operativo' : 'Reconectando'}
+                </span>
+                <span className="block text-[11px] text-stone-500 dark:text-stone-400">Monitoreando flujo en vivo</span>
+              </div>
             </div>
 
             {/* Dark Mode Toggle */}
@@ -90,6 +202,7 @@ export const Header: React.FC = () => {
             </div>
           </div>
         </div>
+        <LiveActivityBar activityLog={activityLog} isConnected={isConnected} currentJobId={currentJobId} />
       </div>
     </header>
   );
