@@ -1,9 +1,17 @@
-import asyncio, json, base64, re
+import asyncio, json, base64, re, sys
 from pathlib import Path
 from typing import Literal
+
 from backend.smart_browser_controller import SmartBrowserController
 from backend.vision_model import decide
 from backend.universal_extractor import UniversalExtractor
+from utils.helpers import discover_function_registry, parse_run_functions
+
+# Ensure project root is on the Python path so top-level utility modules can be imported
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from utils.helpers import discover_function_registry, parse_run_functions
 
 def detect_format_from_prompt(prompt: str, default_fmt: str) -> str:
