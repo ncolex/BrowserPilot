@@ -12,6 +12,13 @@ const HISTORY_STORAGE_KEY = 'browserpilot_job_history';
 
 type StorageOptionValue = 'downloads' | 'drive' | 'notion' | 'custom';
 
+type Instruction = {
+  title: string;
+  description: string;
+  suggestions: string[];
+  quickPrompt: string;
+};
+
 const STORAGE_OPTIONS: { value: StorageOptionValue; label: string; description: string }[] = [
   {
     value: 'downloads',
@@ -32,6 +39,81 @@ const STORAGE_OPTIONS: { value: StorageOptionValue; label: string; description: 
     value: 'custom',
     label: 'Otro destino',
     description: 'Especifica manualmente dónde quieres guardar'
+  }
+];
+
+const INSTRUCTION_LIBRARY: Instruction[] = [
+  {
+    title: 'Recopilar información en un sitio',
+    description: 'Explora un dominio concreto y organiza los hallazgos de forma estructurada.',
+    suggestions: [
+      'Ve a Hacker News y guarda las noticias principales como JSON con título, URL y puntos.',
+      'Busca auriculares inalámbricos en Amazon por menos de $100 y exporta resultados a CSV.'
+    ],
+    quickPrompt: 'Ve a Hacker News y guarda las noticias principales como JSON con título, URL y puntos.'
+  },
+  {
+    title: 'Pedir un formato de salida específico',
+    description: 'Solicita PDF, CSV, JSON, HTML, Markdown o TXT para adaptar el resultado a tu flujo.',
+    suggestions: [
+      'Visita la documentación de Firecrawl y exporta la sección de Pricing como PDF con capturas.',
+      'Extrae los precios de los 10 primeros resultados en formato CSV con encabezados claros.'
+    ],
+    quickPrompt: 'Exporta el resumen en CSV con encabezados claros y datos limpios listos para hoja de cálculo.'
+  },
+  {
+    title: 'Navegación y acciones generales',
+    description: 'Indica clics, desplazamientos, escritura o navegación entre páginas con lenguaje natural.',
+    suggestions: [
+      'Inicia sesión, busca “ofertas laptops”, desplázate hasta la sección de descuentos y captura precios.',
+      'Abre cada resultado relevante y captura los datos clave de contacto o precios.'
+    ],
+    quickPrompt: 'Navega por los resultados relevantes, haz clic en cada enlace y captura los datos clave que encuentres.'
+  },
+  {
+    title: 'Extracción estructurada y organizada',
+    description: 'Pide que añada metadatos, timestamps o tablas listas para dashboards.',
+    suggestions: [
+      'Genera un JSON con título, URL, fecha de captura y breve resumen.',
+      'Crea una tabla con columnas: Fuente, Dato extraído, Evidencia y Timestamp.'
+    ],
+    quickPrompt: 'Devuelve los datos como JSON con campos: fuente, dato_extraido, evidencia, timestamp_iso.'
+  },
+  {
+    title: 'Streaming y control en vivo',
+    description: 'Solicita transmitir el navegador en tiempo real o permitir control manual si es necesario.',
+    suggestions: [
+      'Activa el streaming para ver la sesión y avisa si se necesita intervención humana.',
+      'Permite control manual si el sitio pide resolver un paso interactivo.'
+    ],
+    quickPrompt: 'Habilita streaming en vivo y pausa si se necesita entrada manual, mostrando la URL actual.'
+  },
+  {
+    title: 'Resistencia a bloqueos',
+    description: 'Pide rotación de proxies, evasión de bot checks o resolver bloqueos de forma segura.',
+    suggestions: [
+      'Evita bloqueos de bots y rota proxies si el sitio lo requiere.',
+      'Reintenta si aparece Cloudflare o CAPTCHA e informa en el registro.'
+    ],
+    quickPrompt: 'Si detectas bloqueos o CAPTCHA, intenta superarlos con proxies y documenta cada intento.'
+  },
+  {
+    title: 'Salida para informes',
+    description: 'Genera formatos listos para compartir o integrar en dashboards y documentación.',
+    suggestions: [
+      'Entrega un PDF con capturas clave y un resumen ejecutivo en la primera página.',
+      'Prepara un Markdown con secciones claras y enlaces a las fuentes.'
+    ],
+    quickPrompt: 'Prepara un informe en Markdown con secciones: Resumen, Hallazgos, Fuentes y Próximos pasos.'
+  },
+  {
+    title: 'Indicaciones de uso rápido',
+    description: 'Da pasos de arranque o recordatorios para cargar servicios o rutas específicas.',
+    suggestions: [
+      'Arranca el servicio en Docker y abre http://localhost:8000 para comenzar.',
+      'Carga la interfaz y empieza a enviarle órdenes para probar flujos.'
+    ],
+    quickPrompt: 'Arranca el servicio en Docker y abre http://localhost:8000; confirma cuando esté listo para recibir órdenes.'
   }
 ];
 
@@ -274,11 +356,11 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
               </div>
             </div>
             
-            {/* Example Prompts */}
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-3">
-                Quick Examples
-                <span className="text-stone-500 dark:text-stone-400 font-light ml-2">(click to use)</span>
+          {/* Example Prompts */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-3">
+              Quick Examples
+              <span className="text-stone-500 dark:text-stone-400 font-light ml-2">(click to use)</span>
               </label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <button
@@ -392,10 +474,62 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
                     <div className="text-xs text-stone-400 dark:text-stone-500 mt-2 font-mono">
                       {preset.command}
                     </div>
-                  </button>
-                ))}
-              </div>
+                </button>
+              ))}
             </div>
+          </div>
+
+          {/* Instruction Library */}
+          <div className="mt-8 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">
+                  Biblioteca de instrucciones de BrowserPilot
+                </label>
+                <p className="text-xs text-stone-500 dark:text-stone-400">
+                  Elige una categoría para añadir frases listas al prompt.
+                </p>
+              </div>
+              <span className="text-[11px] uppercase tracking-wide text-amber-700 bg-amber-100 px-2 py-1 rounded-full">
+                Sugerencias rápidas
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {INSTRUCTION_LIBRARY.map((instruction) => (
+                <div
+                  key={instruction.title}
+                  className="p-4 rounded-xl border border-stone-200/70 dark:border-stone-700/60 bg-white/70 dark:bg-stone-800/40 backdrop-blur-sm"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-stone-800 dark:text-stone-200">{instruction.title}</p>
+                      <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">{instruction.description}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPrompt((prev) =>
+                          prev
+                            ? `${prev}\n\n${instruction.quickPrompt}`
+                            : instruction.quickPrompt
+                        )
+                      }
+                      className="text-[11px] font-semibold text-amber-700 bg-amber-100 px-3 py-1 rounded-lg hover:bg-amber-200 transition-colors"
+                    >
+                      Agregar
+                    </button>
+                  </div>
+
+                  <ul className="mt-3 space-y-2 list-disc list-inside text-xs text-stone-600 dark:text-stone-400">
+                    {instruction.suggestions.map((example) => (
+                      <li key={example}>{example}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
           </div>
 
           {/* Format Detection Indicator */}
