@@ -16,7 +16,7 @@ from pathlib import Path
 import re
 import requests
 
-MODEL = genai.GenerativeModel("gemini-2.5-flash-preview-05-20")
+MODEL = genai.GenerativeModel("gemini-1.5-flash-002")
 
 UNIVERSAL_EXTRACTION_PROMPT = """
 You are a universal data extraction specialist. Your task is to analyze any webpage and extract the most relevant information based on the user's specific goal.
@@ -640,7 +640,8 @@ class UniversalExtractor:
                 for idx, image_entry in enumerate(image_entries, start=1):
                     try:
                         img_data = base64.b64decode(image_entry.get("data", ""))
-                        reader = ImageReader(io.BytesIO(img_data))
+                        img_buffer = io.BytesIO(img_data)
+                        reader = ImageReader(img_buffer)
                         img_width, img_height = reader.getSize()
 
                         if img_width > available_width:
@@ -648,7 +649,8 @@ class UniversalExtractor:
                             img_width = available_width
                             img_height = img_height * scale
 
-                        story.append(Image(reader, width=img_width, height=img_height))
+                        img_buffer.seek(0)
+                        story.append(Image(img_buffer, width=img_width, height=img_height))
 
                         caption = image_entry.get("url")
                         if caption:
