@@ -1,9 +1,17 @@
-import asyncio, json, base64, re
+import asyncio, json, base64, re, sys
 from pathlib import Path
 from typing import Literal
+
 from backend.smart_browser_controller import SmartBrowserController
 from backend.vision_model import decide
 from backend.universal_extractor import UniversalExtractor
+
+# Ensure project root is on the Python path so top-level utility modules can be imported
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from utils.helpers import discover_function_registry, parse_run_functions
 
 def detect_format_from_prompt(prompt: str, default_fmt: str) -> str:
     """Detect format from prompt text and override default if found"""
@@ -65,19 +73,26 @@ async def run_agent(
 ):
     """Enhanced agent with smart proxy rotation and vision-based anti-bot detection"""
     from backend.main import broadcast, OUTPUT_DIR, register_streaming_session, store_job_info
-    
+
+    run_functions, cleaned_prompt = parse_run_functions(prompt)
+    prompt = cleaned_prompt or prompt
+
     print(f"🚀 Starting smart agent with vision-based anti-bot detection")
     print(f"📋 Goal: {prompt}")
     print(f"🌐 Default Format: {fmt}")
-    
+
+    if run_functions:
+        print(f"🛠️ Functions requested: {', '.join(run_functions)}")
+
     # Smart format detection from prompt
     detected_fmt = detect_format_from_prompt(prompt, fmt)
     if detected_fmt != fmt:
         print(f"🔄 Format overridden: {fmt} → {detected_fmt}")
         fmt = detected_fmt
-    
+
     # Initialize universal extractor
     extractor = UniversalExtractor()
+    function_registry = discover_function_registry()
     
     # Use SmartBrowserController instead of regular BrowserController
     async with SmartBrowserController(headless, proxy, enable_streaming) as browser:
@@ -126,6 +141,33 @@ async def run_agent(
                 "proxy_stats": browser.get_proxy_stats()
             })
             return
+
+        # Execute any explicitly requested functions before the main decision loop
+        if run_functions:
+            for func_name in run_functions:
+                func = function_registry.get(func_name)
+                if not func:
+                    print(f"⚠️ Function '{func_name}' not found in registry")
+                    await broadcast(job_id, {"type": "function", "name": func_name, "status": "missing"})
+                    continue
+
+                await broadcast(job_id, {"type": "function", "name": func_name, "status": "started"})
+                try:
+                    result = await func(browser)
+                    await broadcast(job_id, {
+                        "type": "function",
+                        "name": func_name,
+                        "status": "completed",
+                        "result": str(result) if result is not None else None
+                    })
+                except Exception as func_error:
+                    print(f"❌ Error running function '{func_name}': {func_error}")
+                    await broadcast(job_id, {
+                        "type": "function",
+                        "name": func_name,
+                        "status": "error",
+                        "message": str(func_error)
+                    })
         
         await broadcast(job_id, {
             "status": "started",
