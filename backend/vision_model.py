@@ -1,17 +1,11 @@
-import os
-import base64
-import google.generativeai as genai
-from dotenv import load_dotenv
 import json
 import asyncio
-import functools
 from PIL import Image
 import io
 
-load_dotenv()
+from backend.gemini_client import GeminiClient
 
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-MODEL = genai.GenerativeModel("gemini-1.5-flash-002")
+gemini_client = GeminiClient()
 
 # Universal system prompt - works for ANY website
 SYSTEM_PROMPT = """
@@ -153,14 +147,10 @@ Consider the website type and adapt your strategy accordingly.
         content = [SYSTEM_PROMPT, prompt, compressed_image]
 
         # Count tokens and send request
-        token_count_response = await asyncio.to_thread(
-            functools.partial(MODEL.count_tokens, content)
-        )
+        token_count_response = await gemini_client.count_tokens(content)
         input_tokens = token_count_response.total_tokens
 
-        response = await asyncio.to_thread(
-            functools.partial(MODEL.generate_content, content)
-        )
+        response = await gemini_client.generate_content(content)
 
         raw_text = response.text
         response_tokens = await count_response_tokens(raw_text)
