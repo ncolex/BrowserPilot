@@ -11,7 +11,7 @@ import io
 load_dotenv()
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-MODEL = genai.GenerativeModel("gemini-2.5-flash-preview-05-20")
+MODEL = genai.GenerativeModel("gemini-1.5-flash-002")
 
 # Universal system prompt - works for ANY website
 SYSTEM_PROMPT = """
