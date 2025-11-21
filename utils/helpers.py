@@ -60,8 +60,46 @@ def discover_function_registry(allowed_modules: Iterable[str] | None = None) -> 
         modules_to_scan.append(f"{FUNCTIONS_PACKAGE}.{module_name}")
 
     for module_path in modules_to_scan:
-        module = importlib.import_module(module_path)
+        if importlib.util.find_spec(module_path) is None:
+            continue
+
+        try:
+            module = importlib.import_module(module_path)
+        except Exception:
+            # Skip modules that fail to import so one bad helper does not
+            # prevent the rest of the registry from loading.
+            continue
+
         for name, func in inspect.getmembers(module, inspect.iscoroutinefunction):
             registry[name.lower()] = func
 
     return registry
+
+
+def load_function_library(path: Path | str = Path("prompts/functions.md")) -> List[Dict[str, object]]:
+    """Parse the ``prompts/functions.md`` catalog into structured entries."""
+
+    library_path = Path(path)
+    if not library_path.exists():
+        return []
+
+    content = library_path.read_text(encoding="utf-8")
+    pattern = re.compile(
+        r"BEGIN_FUNCTION\s+(?P<name>[\w_]+)\s*(?P<body>.*?)END_FUNCTION",
+        re.DOTALL | re.IGNORECASE,
+    )
+
+    functions: List[Dict[str, object]] = []
+    for match in pattern.finditer(content):
+        name = match.group("name").strip()
+        body = match.group("body").strip()
+        steps = [line.strip() for line in body.splitlines() if line.strip()]
+        summary = steps[0] if steps else ""
+
+        functions.append({
+            "name": name,
+            "steps": steps,
+            "summary": summary,
+        })
+
+    return functions

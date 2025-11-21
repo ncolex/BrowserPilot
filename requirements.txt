@@ -6,11 +6,12 @@ pydantic==2.7.1
 bs4==0.0.2
 lxml==5.2.1
 markdownify==0.11.6
-numpy==2.3.1
-pandas==2.3.0
+pandas==2.2.3
+# numpy 2.3.x requires Python >=3.11; pin to the latest 3.10-compatible build
+numpy==2.2.2
 python-dateutil==2.9.0.post0
-pytz==2025.2
-tzdata==2025.2
+pytz==2024.1
+tzdata==2024.1
 reportlab==4.4.2
 requests==2.32.3
 opencv-python-headless==4.10.0.84
