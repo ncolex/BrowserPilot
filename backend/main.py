@@ -8,6 +8,7 @@ from backend.proxy_manager import SmartProxyManager  # Updated import
 from backend.agent import run_agent
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from utils.helpers import discover_function_registry, load_function_library
 
 app = FastAPI()
 
@@ -43,6 +44,45 @@ async def store_job_info(job_id: str, info: dict):
     """Store job information for later retrieval"""
     job_info[job_id] = info
     print(f"📊 Stored job info for {job_id}: {info}")
+
+
+@app.get("/functions")
+async def list_functions():
+    """Expose the functions library with registry availability markers."""
+
+    library_entries = load_function_library()
+    registry = {name.lower() for name in discover_function_registry().keys()}
+
+    functions = []
+    seen = set()
+
+    for entry in library_entries:
+        name = entry.get("name", "").lower()
+        if not name:
+            continue
+
+        seen.add(name)
+        functions.append({
+            "name": name,
+            "summary": entry.get("summary", ""),
+            "steps": entry.get("steps", []),
+            "available": name in registry,
+        })
+
+    for discovered in sorted(registry):
+        if discovered in seen:
+            continue
+        functions.append({
+            "name": discovered,
+            "summary": "Disponible en el runtime (sin descripción en prompts/functions.md)",
+            "steps": [],
+            "available": True,
+            "discovered_only": True,
+        })
+
+    functions.sort(key=lambda f: f["name"])
+
+    return {"functions": functions}
 
 @app.post("/job")
 async def create_job(req: JobRequest):
