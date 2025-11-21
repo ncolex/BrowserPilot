@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import inspect
 import re
 from pathlib import Path
@@ -10,6 +11,12 @@ from typing import Dict, Iterable, List, Tuple
 
 FUNCTIONS_PACKAGE = "browserpilot.functions"
 FUNCTIONS_PATH = Path("browserpilot/functions")
+
+__all__ = [
+    "parse_run_functions",
+    "discover_function_registry",
+    "load_function_library",
+]
 
 
 def parse_run_functions(prompt: str) -> Tuple[List[str], str]:
