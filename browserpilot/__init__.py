@@ -1,0 +1,1 @@
+"""BrowserPilot extensions package."""
