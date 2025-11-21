@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import inspect
 import re
 from pathlib import Path
@@ -10,6 +11,12 @@ from typing import Dict, Iterable, List, Tuple
 
 FUNCTIONS_PACKAGE = "browserpilot.functions"
 FUNCTIONS_PATH = Path("browserpilot/functions")
+
+__all__ = [
+    "parse_run_functions",
+    "discover_function_registry",
+    "load_function_library",
+]
 
 
 def parse_run_functions(prompt: str) -> Tuple[List[str], str]:
@@ -53,7 +60,16 @@ def discover_function_registry(allowed_modules: Iterable[str] | None = None) -> 
         modules_to_scan.append(f"{FUNCTIONS_PACKAGE}.{module_name}")
 
     for module_path in modules_to_scan:
-        module = importlib.import_module(module_path)
+        if importlib.util.find_spec(module_path) is None:
+            continue
+
+        try:
+            module = importlib.import_module(module_path)
+        except Exception:
+            # Skip modules that fail to import so one bad helper does not
+            # prevent the rest of the registry from loading.
+            continue
+
         for name, func in inspect.getmembers(module, inspect.iscoroutinefunction):
             registry[name.lower()] = func
 
