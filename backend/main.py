@@ -159,7 +159,11 @@ async def job_ws(ws: WebSocket, job_id: str):
     
     try:
         while True:
-            await ws.receive_text() # keep connection alive
+            try:
+                # Keep the connection alive with periodic pings to avoid idle timeouts
+                await asyncio.wait_for(ws.receive_text(), timeout=30)
+            except asyncio.TimeoutError:
+                await ws.send_text(json.dumps({"type": "ping"}))
     except WebSocketDisconnect:
         ws_subscribers[job_id].discard(ws)
 
@@ -196,17 +200,18 @@ async def stream_ws(websocket: WebSocket, job_id: str):
     try:
         while True:
             try:
-                message = await websocket.receive_text()
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=30)
                 data = json.loads(message)
-                
+
                 if data['type'] == 'mouse':
                     await browser_ctrl.handle_mouse_event(data)
                 elif data['type'] == 'keyboard':
                     await browser_ctrl.handle_keyboard_event(data)
                 elif data['type'] == 'ping':
                     await websocket.send_text(json.dumps({"type": "pong"}))
-                    
+
             except asyncio.TimeoutError:
+                # Send heartbeat to keep long-lived streaming connections alive
                 await websocket.send_text(json.dumps({"type": "ping"}))
                 
     except WebSocketDisconnect:
