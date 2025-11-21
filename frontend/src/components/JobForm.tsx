@@ -1,5 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Download, Monitor, Eye, EyeOff, Sparkles, ArrowRight, Image as ImageIcon } from 'lucide-react';
+import {
+  Play,
+  Download,
+  Monitor,
+  Eye,
+  EyeOff,
+  Sparkles,
+  ArrowRight,
+  Image as ImageIcon,
+  Wand2,
+  CheckCircle2,
+  AlertTriangle,
+  Plus,
+  Loader2,
+  RefreshCcw
+} from 'lucide-react';
 import { WebSocketManager } from '../services/WebSocketManager';
 const API_BASE_URL = '';
 
@@ -18,6 +33,16 @@ type Instruction = {
   suggestions: string[];
   quickPrompt: string;
 };
+
+type FunctionDefinition = {
+  name: string;
+  summary: string;
+  steps: string[];
+  available: boolean;
+  discovered_only?: boolean;
+};
+
+type SelectedFunctionNotes = Record<string, string>;
 
 const STORAGE_OPTIONS: { value: StorageOptionValue; label: string; description: string }[] = [
   {
@@ -124,7 +149,9 @@ interface JobHistoryEntry {
   streaming: boolean;
   storageSelection: StorageOptionValue;
   storageLabel: string;
-   includeImages: boolean;
+  includeImages: boolean;
+  functionNames?: string[];
+  functionNotes?: SelectedFunctionNotes;
   timestamp: number;
 }
 
@@ -171,6 +198,11 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
   const [headless, setHeadless] = useState(false);
   const [streaming, setStreaming] = useState(true);
   const [includeImages, setIncludeImages] = useState(true);
+  const [functionLibrary, setFunctionLibrary] = useState<FunctionDefinition[]>([]);
+  const [functionLoading, setFunctionLoading] = useState(false);
+  const [selectedFunctions, setSelectedFunctions] = useState<SelectedFunctionNotes>({});
+  const [customFunctionName, setCustomFunctionName] = useState('');
+  const [customFunctionNote, setCustomFunctionNote] = useState('');
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [detectedFormat, setDetectedFormat] = useState<string | null>(null);
@@ -183,6 +215,12 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
     const detected = detectFormatFromPrompt(prompt);
     setDetectedFormat(detected);
   }, [prompt]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchFunctionLibrary(controller.signal);
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     try {
@@ -201,7 +239,13 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
               ...entry,
               storageSelection: normalizedSelection,
               storageLabel: optionLabel,
-              includeImages: entry.includeImages ?? true
+              includeImages: entry.includeImages ?? true,
+              functionNames: entry.functionNames ?? Object.keys(entry.functionNotes || {}),
+              functionNotes:
+                entry.functionNotes ??
+                (entry.functionNames
+                  ? Object.fromEntries(entry.functionNames.map((name) => [name, '']))
+                  : {})
             } as JobHistoryEntry;
           })
         );
@@ -242,6 +286,50 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
     return null;
   };
 
+  const toggleFunctionSelection = (name: string) => {
+    setSelectedFunctions(prev => {
+      const next = { ...prev };
+      if (next[name]) {
+        delete next[name];
+      } else {
+        next[name] = '';
+      }
+      return next;
+    });
+  };
+
+  const updateFunctionNote = (name: string, note: string) => {
+    setSelectedFunctions(prev => ({ ...prev, [name]: note }));
+  };
+
+  const addCustomFunction = () => {
+    const trimmedName = customFunctionName.trim();
+    if (!trimmedName) return;
+
+    setSelectedFunctions(prev => ({ ...prev, [trimmedName]: customFunctionNote.trim() }));
+    setCustomFunctionName('');
+    setCustomFunctionNote('');
+  };
+
+  const clearFunctionSelection = () => {
+    setSelectedFunctions({});
+  };
+
+  const fetchFunctionLibrary = async (signal?: AbortSignal) => {
+    setFunctionLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/functions`, { signal });
+      const data = await response.json();
+      setFunctionLibrary(data.functions || []);
+    } catch (error) {
+      const err = error as { name?: string };
+      if (err?.name === 'AbortError') return;
+      console.error('Unable to load function library', error);
+    } finally {
+      setFunctionLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim() || isSubmitting) return;
@@ -255,12 +343,20 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
         ? (customStorageLocation.trim() || 'Ubicación personalizada')
         : (selectedOption?.label || 'Descargar al finalizar');
 
+    const functionDirectives = Object.keys(selectedFunctions).map(name => `RUN_FUNCTION ${name}`);
+    const functionNotes = Object.entries(selectedFunctions)
+      .filter(([, note]) => note.trim().length > 0)
+      .map(([name, note]) => `# Function ${name} context\n${note.trim()}`);
+    const composedPrompt = [functionDirectives.join('\n'), prompt.trim(), functionNotes.join('\n\n')]
+      .filter(Boolean)
+      .join('\n\n');
+
     try {
       const response = await fetch(`${API_BASE_URL}/job`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt,
+          prompt: composedPrompt,
           format: finalFormat,
           headless,
           enable_streaming: streaming,
@@ -285,6 +381,8 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
           storageSelection,
           storageLabel: finalStorageLabel,
           includeImages: finalIncludeImages,
+          functionNames: Object.keys(selectedFunctions),
+          functionNotes: selectedFunctions,
           timestamp: Date.now()
         },
         ...prev
@@ -448,6 +546,182 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
                     Extract professional profiles
                   </div>
                 </button>
+              </div>
+            </div>
+
+            {/* Function library */}
+            <div className="mt-8 space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-amber-100/80 dark:bg-stone-800/60 text-amber-600">
+                    <Wand2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-stone-800 dark:text-stone-100">Funciones automáticas</p>
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
+                      Activa RUN_FUNCTION para reutilizar flujos listos o añadir los tuyos.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fetchFunctionLibrary()}
+                    className="flex items-center gap-1 text-xs px-3 py-1 rounded-lg border border-stone-200/70 dark:border-stone-700/60 hover:bg-stone-50/80 dark:hover:bg-stone-800/40"
+                  >
+                    <RefreshCcw className="w-4 h-4" />
+                    Actualizar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearFunctionSelection}
+                    className="text-xs px-3 py-1 rounded-lg border border-transparent text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-100"
+                  >
+                    Limpiar selección
+                  </button>
+                </div>
+              </div>
+
+              {Object.keys(selectedFunctions).length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {Object.keys(selectedFunctions).map(name => (
+                    <span
+                      key={name}
+                      className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200"
+                    >
+                      {name}
+                      <button
+                        type="button"
+                        onClick={() => toggleFunctionSelection(name)}
+                        className="text-stone-500 hover:text-stone-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {functionLoading ? (
+                  <div className="col-span-2 flex items-center gap-2 text-sm text-stone-500">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Cargando funciones...
+                  </div>
+                ) : functionLibrary.length === 0 ? (
+                  <div className="col-span-2 text-sm text-stone-500 bg-stone-50/80 dark:bg-stone-800/50 border border-stone-200/70 dark:border-stone-700/60 rounded-xl px-4 py-3">
+                    No encontramos funciones registradas todavía. Añade una función personalizada para usar RUN_FUNCTION.
+                  </div>
+                ) : (
+                  functionLibrary.map((func) => {
+                    const isSelected = Boolean(selectedFunctions[func.name]);
+                    return (
+                      <button
+                        type="button"
+                        key={func.name}
+                        onClick={() => toggleFunctionSelection(func.name)}
+                        className={`text-left p-4 rounded-xl border transition-all duration-200 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 backdrop-blur-sm ${
+                          isSelected
+                            ? 'border-amber-300/70 bg-amber-50/60 dark:bg-amber-500/10'
+                            : 'border-stone-200/70 dark:border-stone-700/60 bg-white/50 dark:bg-stone-900/40'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            {isSelected ? (
+                              <CheckCircle2 className="w-5 h-5 text-amber-600" />
+                            ) : (
+                              <Wand2 className="w-5 h-5 text-stone-400" />
+                            )}
+                            <div>
+                              <p className="text-sm font-semibold text-stone-800 dark:text-stone-100">{func.name}</p>
+                              <p className="text-xs text-stone-500 dark:text-stone-400 line-clamp-2">
+                                {func.summary || 'Sin descripción'}
+                              </p>
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[11px] px-2 py-1 rounded-full border ${
+                              func.available
+                                ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
+                                : 'border-amber-200 text-amber-700 bg-amber-50'
+                            }`}
+                          >
+                            {func.available ? 'Disponible' : 'No encontrada'}
+                          </span>
+                        </div>
+                        {func.steps && func.steps.length > 0 && (
+                          <div className="mt-3 text-xs text-stone-500 dark:text-stone-400 space-y-1">
+                            {func.steps.slice(0, 3).map((step, idx) => (
+                              <div key={`${func.name}-step-${idx}`} className="flex gap-2 items-start">
+                                <span className="text-[10px] text-stone-400 mt-0.5">•</span>
+                                <span className="line-clamp-1">{step}</span>
+                              </div>
+                            ))}
+                            {func.steps.length > 3 && <p className="text-[11px] text-amber-600">…</p>}
+                          </div>
+                        )}
+                        {func.discovered_only && (
+                          <div className="mt-2 flex items-center gap-1 text-[11px] text-amber-600">
+                            <AlertTriangle className="w-3 h-3" />
+                            Descrito en runtime, añade pasos en prompts/functions.md
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {Object.keys(selectedFunctions).length > 0 && (
+                <div className="space-y-3 p-4 rounded-xl border border-stone-200/70 dark:border-stone-700/60 bg-white/60 dark:bg-stone-900/40">
+                  <p className="text-sm font-semibold text-stone-800 dark:text-stone-100">Notas para funciones seleccionadas</p>
+                  {Object.keys(selectedFunctions).map(name => (
+                    <div key={`${name}-note`} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase text-stone-600 dark:text-stone-300 tracking-wide">{name}</p>
+                        <span className="text-[11px] text-stone-500">Contexto opcional</span>
+                      </div>
+                      <textarea
+                        value={selectedFunctions[name]}
+                        onChange={(e) => updateFunctionNote(name, e.target.value)}
+                        rows={2}
+                        className="w-full px-3 py-2 text-sm border border-stone-200/70 dark:border-stone-700/60 rounded-lg bg-white/60 dark:bg-stone-900/40 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                        placeholder="Ej: aplica al dominio actual o usa esta tabla de columnas personalizadas"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-stone-200/70 dark:border-stone-700/60">
+                <div className="md:col-span-2 space-y-2">
+                  <input
+                    type="text"
+                    value={customFunctionName}
+                    onChange={(e) => setCustomFunctionName(e.target.value)}
+                    placeholder="Nombre de función (ej. export_to_csv)"
+                    className="w-full px-4 py-3 border border-stone-200/70 dark:border-stone-700/60 rounded-xl focus:ring-2 focus:ring-amber-400/30 bg-white/60 dark:bg-stone-900/40"
+                  />
+                  <textarea
+                    value={customFunctionNote}
+                    onChange={(e) => setCustomFunctionNote(e.target.value)}
+                    placeholder="Contexto opcional para esta función (qué datos extraer, reglas de navegación, etc.)"
+                    rows={2}
+                    className="w-full px-4 py-3 border border-stone-200/70 dark:border-stone-700/60 rounded-xl focus:ring-2 focus:ring-amber-400/30 bg-white/60 dark:bg-stone-900/40"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={addCustomFunction}
+                    disabled={!customFunctionName.trim()}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Añadir RUN_FUNCTION
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -733,6 +1007,18 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
                         {entry.storageLabel}
                       </span>
                     </div>
+                    {entry.functionNames && entry.functionNames.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {entry.functionNames.map((fn) => (
+                          <span
+                            key={`${entry.timestamp}-${fn}`}
+                            className="px-2 py-1 text-[11px] rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+                          >
+                            RUN_FUNCTION {fn}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 self-end md:self-auto">
                     <span className="text-xs text-stone-400">
@@ -746,6 +1032,7 @@ export const JobForm: React.FC<JobFormProps> = ({ wsManager, onJobCreated }) => 
                         setHeadless(entry.headless);
                         setStreaming(entry.streaming);
                         setIncludeImages(entry.includeImages ?? true);
+                        setSelectedFunctions(entry.functionNotes ?? {});
                         setStorageSelection(entry.storageSelection);
                         if (entry.storageSelection === 'custom') {
                           setCustomStorageLocation(entry.storageLabel);
