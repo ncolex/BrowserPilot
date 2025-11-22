@@ -9,6 +9,9 @@ import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+FUNCTIONS_PACKAGE = "browserpilot.functions"
+FUNCTIONS_PATH = BASE_DIR / "browserpilot" / "functions"
 FUNCTIONS_PACKAGE = "browserpilot.functions"
 FUNCTIONS_PATH = Path("browserpilot/functions")
 
