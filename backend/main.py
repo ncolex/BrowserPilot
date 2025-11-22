@@ -1,4 +1,4 @@
-import asyncio, json, os, uuid, shutil, base64
+import asyncio, json, os, uuid, shutil, base64, time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks, UploadFile, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -323,7 +323,7 @@ def get_proxy_stats():
     stats = smart_proxy_manager.get_proxy_stats()
     return {
         "proxy_stats": stats,
-        "timestamp": asyncio.get_event_loop().time()
+        "timestamp": time.time()
     }
 
 @app.post("/proxy/reload")
